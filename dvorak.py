@@ -5,10 +5,8 @@ from editdistance import eval as editdistance
 from time import time
 
 freq_order = 'etaoinshrdlucmfwypvbgkqjxz'
-dvorak_to_qwerty = dict()
-for d, q in zip("',.pyfgcrl/=aoeuidhtns-;qjkxbmwvz",
-        "qwertyuiop[]asdfghjkl;'zxcvbnm,./"):
-    dvorak_to_qwerty[d] = q
+dvorak_to_qwerty = dict(zip("',.pyfgcrl/=aoeuidhtns-;qjkxbmwvz",
+        "qwertyuiop[]asdfghjkl;'zxcvbnm,./"))
 
 with open('wordlist', 'r') as f:
     all_words = [line.strip() for line in f.readlines()]
