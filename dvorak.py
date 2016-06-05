@@ -54,7 +54,7 @@ def teach():
         words = good_words(i)
         dtime = 999999999
         dtext = 999999999
-        while dtime > 100 or dtext > 1:
+        while dtime > 40 or dtext > 1:
             dtime, dtext = teachline(words)
     while True:
         teachline(all_words)
