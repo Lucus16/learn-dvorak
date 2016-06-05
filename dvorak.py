@@ -26,7 +26,6 @@ def good_words(n):
 
 def genline(words):
     if words == []: return ''
-    print(repr(words))
     line = choice(words)
     while True:
         word = choice(words)
