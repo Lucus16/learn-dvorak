@@ -1,66 +1,75 @@
 #!/usr/bin/env python
 
-from random import choice
+from random import choice, random
 from editdistance import eval as editdistance
 from time import time
 
 freq_order = 'etaoinshrdlucmfwypvbgkqjxz'
-dvorak_to_qwerty = dict(zip("',.pyfgcrl/=aoeuidhtns-;qjkxbmwvz",
-        "qwertyuiop[]asdfghjkl;'zxcvbnm,./"))
 
 with open('wordlist', 'r') as f:
     all_words = [line.strip() for line in f.readlines()]
 
 def good_words(n):
-    alphabet = freq_order[:n + 1]
-    focus = freq_order[n]
-    def good(word):
-        if not all((c in alphabet for c in word)):
-            return False
-        if focus is not None and focus not in word:
-            return False
-        return True
-    return [word for word in all_words if good(word)]
+    if n < len(freq_order):
+        letters = set(freq_order[:n + 1])
+        focus = freq_order[n]
+    else:
+        return all_words, all_words
+    lwords = [word for word in all_words if set(word) <= letters]
+    fwords = [word for word in lwords if focus in word]
+    return fwords, lwords
 
-def genline(words):
-    if words == []: return ''
-    line = choice(words)
+def genline(fwords, lwords):
+    line = choice(fwords)
     while True:
-        word = choice(words)
+        if random() < 0.8:
+            word = choice(fwords)
+        else:
+            word = choice(lwords)
         if len(word) + len(line) < 80:
             line += ' ' + word
         else:
-            break
-    return line
+            return line
 
-def teachline(words):
-    line = genline(words)
+def teachline(fwords, lwords):
+    line = genline(fwords, lwords)
     print(line)
     start = time()
     entered = input()
     end = time()
     dtext = editdistance(line, entered)
     dtime = int(end - start)
-    percentage = int(dtext / len(line))
-    print(str(dtext) + ' mistakes (' + str(percentage) + '%)')
-    print(str(dtime) + ' seconds')
+    percentage = int(dtext / len(line) * 100)
+    print('{} mistakes ({}%), {} seconds'.format(dtext, percentage, dtime))
     return dtime, dtext
 
 def teach():
-    for i in range(len(freq_order)):
-        key = freq_order[i]
-        print('Next key: ' + key + ' (' + dvorak_to_qwerty[key] +
-            ' on qwerty keyboard)')
-        words = good_words(i)
-        dtime = 999999999
-        dtext = 999999999
-        while dtime > 40 or dtext > 1:
-            dtime, dtext = teachline(words)
+    i = 1
+    words = good_words(i)
+    progress = 0
     while True:
-        teachline(all_words)
+        key = freq_order[i]
+        print('Current key:', key, '\t\tcurrent progress:', progress)
+        input('Press enter when ready')
+        dtime, dtext = teachline(*words)
+        if dtime > 60:
+            progress -= 1
+            if progress < 0:
+                progress = 1
+                i -= 1
+                words = good_words(i)
+        if dtime > 30 or dtext > 1:
+            progress = 0
+        else:
+            progress += 1
+        if progress >= 2:
+            progress = 0
+            i += 1
+            words = good_words(i)
 
 if __name__ == '__main__':
     try:
         teach()
     except EOFError:
         pass
+    print()
