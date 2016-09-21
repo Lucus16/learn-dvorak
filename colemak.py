@@ -117,7 +117,7 @@ def redraw_rest(current, pos, stdscr, force=False):
         stdscr.clrtoeol()
         stdscr.addstr(current[pos:])
 
-def do_line(words, stdscr):
+def do_line(words, stdscr, edon=True):
     global unlocked
     target = ' '.join(words)
     stdscr.addstr(target + '\n')
@@ -127,55 +127,67 @@ def do_line(words, stdscr):
     pos = 0
     get_time()
     total_time = 0
-    fails = 0
+    presses = 0
     while ch not in ['\n']:
         ch = stdscr.getkey()
         delay = get_time()
         total_time += delay
         wi = current[:pos].count(' ')
+        presses += 1
         y, x = stdscr.getyx()
         if len(ch) == 1 and ('a' <= ch <= 'z' or ch in ' '):
-            if ch != target[pos:pos + 1]:
-                fails += 1
             current = current[:pos] + ch + current[pos:]
             update_acc(ch, target[pos:pos + 1], delay, words[wi])
             pos += 1
             stdscr.addstr(ch)
             redraw_rest(current, pos, stdscr)
-        elif ch == 'KEY_LEFT' and pos > 0:
+        elif edon and ch == 'KEY_LEFT' and pos > 0:
             pos -= 1
-        elif ch == 'KEY_RIGHT' and pos < len(current):
+        elif edon and ch == 'KEY_RIGHT' and pos < len(current):
             pos += 1
-        elif ch == 'KEY_BACKSPACE' and pos > 0:
+        elif edon and ch == 'KEY_BACKSPACE' and pos > 0:
             pos -= 1
             current = current[:pos] + current[pos + 1:]
             redraw_rest(current, pos, stdscr, True)
-        elif ch == 'KEY_DC' and pos < len(current):
+        elif edon and ch == 'KEY_DC' and pos < len(current):
             current = current[:pos] + current[pos + 1:]
             redraw_rest(current, pos, stdscr, True)
-        elif ch == 'KEY_END':
+        elif edon and ch == 'KEY_END':
             pos = len(current)
-        elif ch == 'KEY_HOME':
+        elif edon and ch == 'KEY_HOME':
             pos = 0
         elif ch == '\x1b':
             escapeseq = ch
         elif ch == '\n':
             stdscr.addstr('\n')
             break
-#        elif ch == 'KEY_RESIZE':
-#            stdscr.redrawwin()
-#        else:
-#            stdscr.addstr(repr(ch))
+        elif ch == 'KEY_RESIZE':
+            pass # TODO: Manually redraw screen
+            #stdscr.redrawwin() doesn't work
+        elif ch == '\x04':
+            sys.exit()
+        elif edon and ch == '\x17':
+            pass # TODO: Ctrl+W
+        else:
+            stdscr.addstr(repr(ch))
         stdscr.move(y, pos)
-    wpm = len(target) * 12 / total_time
-    acc = (len(target) - fails) / len(target)
+    rights = 0
+    presses -= 1 # don't count the enter
+    for i in range(min(len(target), len(current))):
+        if target[i] == current[i]:
+            rights += 1
+    wpm = rights * 12 / total_time
+    acc = rights / max(presses, len(target))
     edd = editdist(current, target)
     stdscr.addstr('WPM: {:.2f}  Accuracy: {:.2%}\n'.format(wpm, acc))
     if wpm > 32 and acc > 0.98:
         unlocked += 1
     return (wpm, acc, edd)
 
-def main(stdscr):
+def main(stdscr_):
+    global stdscr
+    stdscr = stdscr_
+    stdscr.scrollok(True)
     while True:
         words = genline()
         results = do_line(words, stdscr)
