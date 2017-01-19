@@ -8,7 +8,10 @@
 
 // TODO: Add option to allow editing with backspace, arrow keys, etc...
 // TODO: Improve accuracy updates and word ratings.
-// TODO: Seed random number generator.
+// TODO: Accuracy tracking for two- and three-letter combinations
+// TODO: Accuracy tracking for whole words
+// TODO: Introduce new letters when typing is good enough
+// TODO: Fix stats for incomplete lines (see empty line)
 
 typedef uint64_t Time;
 typedef uint64_t Chance;
@@ -16,7 +19,7 @@ typedef uint64_t Chance;
 typedef struct Word {
 	char *word;
 	int hardest_letter;
-	int len;
+	size_t len;
 	Chance chance;
 } Word;
 
@@ -27,10 +30,10 @@ static const int ORDER_POS[26] = {
 	5, 3, 17, 22, 8, 6, 1, 11, 18, 15, 24, 16, 25
 };
 
-uint64_t key_accuracy[26];
+float key_accuracy[26];
 float global_accuracy;
 Word *letter_start[27];
-int unlocked = 25;
+int unlocked = 2;
 Word *words;
 size_t word_count;
 char line[81];
@@ -59,7 +62,7 @@ Time key_time() {
 	return diff;
 }
 
-int value_word(char *w) {
+int word_hardest_letter(char *w) {
 	int v = 0;
 	for (char *c = w; *c; c++) {
 		int i = ORDER_POS[*c - 'a'];
@@ -72,14 +75,22 @@ int compare_words(const void *a, const void *b) {
 	return ((Word*)a)->hardest_letter - ((Word*)b)->hardest_letter;
 }
 
-void update_accuracy(char pressed, char target, Time time, Word *word) {
+void update_accuracy(char pressed, char target, Time time) {
 	bool correct = (pressed == target);
 	int score = correct ? time : MAX_TIME;
 	global_accuracy = (correct + 15 * global_accuracy) / 16;
+	if (target >= 'a' && target <= 'z') {
+		key_accuracy[target - 'a'] = key_accuracy[target - 'a'] * 0.9 + score * 0.1;
+	}
 }
 
-Chance rate_word(char *w) {
-	return 1; // TODO Base word rating on key accuracy of its letters
+Chance rate_word(Word *w) {
+	float total = 0.0;
+	for (char *c = w->word; c < w->word + w->len; c++) {
+		float tmp = key_accuracy[*c - 'a'];
+		total += tmp * tmp;
+	}
+	return total / (w->len + 1) * 65536;
 }
 
 Word *random_word() {
@@ -101,6 +112,7 @@ void run_line() {
 	Time line_time = 0;
 	printf("%s\n", line);
 	key_time();
+
 	while (!done) {
 		char c = getchar();
 		Time t = key_time();
@@ -110,28 +122,32 @@ void run_line() {
 		if (c == '\n') {
 			break;
 		}
-		update_accuracy(c, line[pos], t, NULL);
+		update_accuracy(c, line[pos], t);
 		if (c != line[pos]) { char_perfect[pos] = false; }
 		written[pos++] = c;
 	}
+
 	int perfect_count = 0;
 	int accurate_count = 0;
-	for (int i = 0; i < line_len; i++) {
+	for (size_t i = 0; i < line_len; i++) {
 		perfect_count += char_perfect[i] && line[i] == written[i];
 		accurate_count += line[i] == written[i];
 	}
-	//printf("%i WPM, %.1f%%\n", 12000 / avg_time, global_accuracy * 100);
 	printf("%li raw WPM, %li adjusted WPM, %.1f%%\n",
 			12000 * keypress_count / line_time,
 			12000 * accurate_count / line_time,
 			100.0 * perfect_count / line_len);
+	if (perfect_count / line_len > 0.999 &&
+			12000 * accurate_count / line_time > 32) {
+		if (unlocked < 26) { unlocked++; }
+	}
 }
 
 void generate_line() {
 	// Generate weights
 	chance_sum = 0;
 	for (Word *w = words; w < letter_start[unlocked]; w++) {
-		w->chance = rate_word(w->word);
+		w->chance = rate_word(w);
 		chance_sum += w->chance;
 	}
 	line_len = 0;
@@ -163,6 +179,7 @@ void read_wordlist() {
 			word_count++;
 		}
 	}
+
 	// Store words
 	words = malloc(word_count * sizeof(Word));
 	Word *cur_word = words;
@@ -171,9 +188,10 @@ void read_wordlist() {
 		while (*c != '\n') { c++; }
 		*c = '\0';
 		cur_word->len = c - cur_word->word;
-		cur_word->hardest_letter = value_word(cur_word->word);
+		cur_word->hardest_letter = word_hardest_letter(cur_word->word);
 		cur_word++;
 	}
+
 	// Sort words and set up letter_start
 	qsort(words, word_count, sizeof(Word), compare_words);
 	int j = 0;
@@ -183,7 +201,7 @@ void read_wordlist() {
 			j++;
 		}
 	}
-	letter_start[27] = words + word_count;
+	letter_start[26] = words + word_count;
 }
 
 struct termios term;
@@ -203,6 +221,10 @@ void stop() {
 }
 
 int main() {
+	for (int i = 0; i < 26; i++) {
+		key_accuracy[i] = 1.0;
+	}
+	srand(now_ms());
 	read_wordlist();
 	key_time();
 	start();
