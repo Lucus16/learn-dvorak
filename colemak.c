@@ -6,8 +6,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-// TODO: mainloop: print line, wait for char, update accuracy, etc...
+// TODO: Add option to allow editing with backspace, arrow keys, etc...
 // TODO: Improve accuracy updates and word ratings.
+// TODO: Seed random number generator.
 
 typedef uint64_t Time;
 typedef uint64_t Chance;
@@ -26,13 +27,14 @@ static const int ORDER_POS[26] = {
 	5, 3, 17, 22, 8, 6, 1, 11, 18, 15, 24, 16, 25
 };
 
-int key_accuracy[26];
-int global_accuracy;
+uint64_t key_accuracy[26];
+float global_accuracy;
 Word *letter_start[27];
-int unlocked = 2;
+int unlocked = 25;
 Word *words;
 size_t word_count;
 char line[81];
+size_t line_len;
 Chance chance_sum;
 
 Time now_ms() {
@@ -70,8 +72,10 @@ int compare_words(const void *a, const void *b) {
 	return ((Word*)a)->hardest_letter - ((Word*)b)->hardest_letter;
 }
 
-void update_accuracy(char pressed, char target, Time time, Word word) {
-	// TODO
+void update_accuracy(char pressed, char target, Time time, Word *word) {
+	bool correct = (pressed == target);
+	int score = correct ? time : MAX_TIME;
+	global_accuracy = (correct + 15 * global_accuracy) / 16;
 }
 
 Chance rate_word(char *w) {
@@ -88,12 +92,39 @@ Word *random_word() {
 }
 
 void run_line() {
-	printf("%s\n", line);
 	bool done = false;
+	bool char_perfect[80];
+	int keypress_count = -1;
+	memset(char_perfect, 1, sizeof(char_perfect));
+	int pos = 0;
+	char written[81];
+	Time line_time = 0;
+	printf("%s\n", line);
+	key_time();
 	while (!done) {
 		char c = getchar();
 		Time t = key_time();
+		printf("%c", c);
+		line_time += t;
+		keypress_count++;
+		if (c == '\n') {
+			break;
+		}
+		update_accuracy(c, line[pos], t, NULL);
+		if (c != line[pos]) { char_perfect[pos] = false; }
+		written[pos++] = c;
 	}
+	int perfect_count = 0;
+	int accurate_count = 0;
+	for (int i = 0; i < line_len; i++) {
+		perfect_count += char_perfect[i] && line[i] == written[i];
+		accurate_count += line[i] == written[i];
+	}
+	//printf("%i WPM, %.1f%%\n", 12000 / avg_time, global_accuracy * 100);
+	printf("%li raw WPM, %li adjusted WPM, %.1f%%\n",
+			12000 * keypress_count / line_time,
+			12000 * accurate_count / line_time,
+			100.0 * perfect_count / line_len);
 }
 
 void generate_line() {
@@ -103,7 +134,7 @@ void generate_line() {
 		w->chance = rate_word(w->word);
 		chance_sum += w->chance;
 	}
-	int line_len = 0;
+	line_len = 0;
 	line[0] = '\0';
 	while (line_len < 72) {
 		Word *w = random_word();
@@ -115,6 +146,8 @@ void generate_line() {
 		strcat(line, " ");
 		// Select weighted random word
 	}
+	line_len -= 1;
+	line[line_len] = '\0';
 }
 
 void read_wordlist() {
@@ -171,14 +204,11 @@ void stop() {
 
 int main() {
 	read_wordlist();
-	generate_line();
 	key_time();
-	printf("%s\n", line);
 	start();
-	char c = 0;
-	while (c != 4) {
-		c = getchar();
-		printf("%c\t%5lims\n", c, key_time());
+	while (true) {
+		generate_line();
+		run_line();
 	}
 	stop();
 	return 0;
