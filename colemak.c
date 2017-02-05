@@ -36,6 +36,7 @@ int unlocked = 2;
 Word *words;
 size_t word_count;
 char line[81];
+Word *line_word[80];
 size_t line_len;
 Chance chance_sum;
 
@@ -91,6 +92,7 @@ void read_wordlist() {
 		*c = '\0';
 		cur_word->len = c - cur_word->word;
 		cur_word->hardest_letter = word_hardest_letter(cur_word->word);
+		cur_word->accuracy = 1.0;
 		cur_word++;
 	}
 
@@ -134,7 +136,7 @@ Time key_time() {
 	return diff;
 }
 
-void update_accuracy(char pressed, char target, Time time) {
+void update_accuracy(char pressed, char target, Time time, Word *word) {
 	bool correct = (pressed == target);
 	int score = correct ? time : MAX_TIME;
 	if (target >= 'a' && target <= 'z') {
@@ -148,7 +150,7 @@ Chance rate_word(Word *w) {
 		float tmp = key_accuracy[*c - 'a'];
 		total += tmp * tmp;
 	}
-	return total / (w->len + 1) * 65536;
+	return total / (w->len + 1) * 0x10000;
 }
 
 Word *random_word() {
@@ -158,6 +160,34 @@ Word *random_word() {
 		r -= (w++)->chance;
 	}
 	return w;
+}
+
+void generate_line() {
+	// Generate weights
+	chance_sum = 0;
+	for (Word *w = words; w < letter_start[unlocked]; w++) {
+		w->chance = rate_word(w);
+		chance_sum += w->chance;
+	}
+	//print_word_scores();
+	line_len = 0;
+	line[0] = '\0';
+	while (line_len < 72) {
+		Word *w = random_word();
+		for (int i = line_len; i < line_len + w->len; i++) {
+			line_word[i] = w;
+		}
+		if (line_len + w->len + 1 > 80) {
+			continue;
+		}
+		line_len += w->len + 1;
+		line_word[line_len - 1] = NULL;
+		strcat(line, w->word);
+		strcat(line, " ");
+		// Select weighted random word
+	}
+	line_len--;
+	line[line_len] = '\0';
 }
 
 void run_line() {
@@ -178,10 +208,10 @@ void run_line() {
 		} else if (c == ' ' || (c >= 'a' && c <= 'z')) {
 			printf("%c", c);
 			if (pos < line_len) {
-				update_accuracy(c, line[pos], t);
+				update_accuracy(c, line[pos], t, line_word[pos]);
 				if (c == line[pos]) { accurate++; }
 			} else {
-				update_accuracy(c, '\0', t);
+				update_accuracy(c, ' ', t, NULL);
 			}
 		}
 		pos++;
@@ -189,34 +219,10 @@ void run_line() {
 
 	int wpm = 12000 * pos / line_time;
 	float accuracy = 1.0 * accurate / line_len;
-	printf("\n\n%3i WPM, %5.1f%% accuracy\n\n", wpm, 100 * accuracy);
+	printf("\n\n%3i WPM, %5.1f%% accuracy\n\n", wpm, 100.0 * accuracy);
 	if (accuracy > 0.999 && wpm > 32 && unlocked < 26) {
 		unlocked++;
 	}
-}
-
-void generate_line() {
-	// Generate weights
-	chance_sum = 0;
-	for (Word *w = words; w < letter_start[unlocked]; w++) {
-		w->chance = rate_word(w);
-		chance_sum += w->chance;
-	}
-	//print_word_scores();
-	line_len = 0;
-	line[0] = '\0';
-	while (line_len < 72) {
-		Word *w = random_word();
-		if (line_len + w->len + 1 > 80) {
-			continue;
-		}
-		line_len += w->len + 1;
-		strcat(line, w->word);
-		strcat(line, " ");
-		// Select weighted random word
-	}
-	line_len -= 1;
-	line[line_len] = '\0';
 }
 
 int main() {
