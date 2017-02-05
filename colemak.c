@@ -10,8 +10,6 @@
 // TODO: Improve accuracy updates and word ratings.
 // TODO: Accuracy tracking for two- and three-letter combinations
 // TODO: Accuracy tracking for whole words
-// TODO: Introduce new letters when typing is good enough
-// TODO: Fix stats for incomplete lines (see empty line)
 
 typedef uint64_t Time;
 typedef uint64_t Chance;
@@ -21,6 +19,7 @@ typedef struct Word {
 	int hardest_letter;
 	size_t len;
 	Chance chance;
+	float accuracy;
 } Word;
 
 static const Time MAX_TIME = 1000;
@@ -29,6 +28,15 @@ static const int ORDER_POS[26] = {
 	2, 19, 12, 9, 0, 14, 20, 7, 4, 23, 21, 10, 13,
 	5, 3, 17, 22, 8, 6, 1, 11, 18, 15, 24, 16, 25
 };
+
+//static const char LAYOUT_TRANSLATION[26] = {
+//	'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+//	'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+//};
+//static const char LAYOUT_TRANSLATION[26] = {
+//	'a', 'b', 'c', 's', 'f', 't', 'd', 'h', 'u', 'n', 'e', 'i', 'm',
+//	'k', 'y', 'o', 'q', 'p', 'r', 'g', 'l', 'v', 'w', 'x', 'j', 'z',
+//}; // and then ';' <-> 'o' and ':' <-> 'O'
 
 float key_accuracy[26];
 float global_accuracy;
@@ -39,6 +47,13 @@ size_t word_count;
 char line[81];
 size_t line_len;
 Chance chance_sum;
+bool edit_enabled = false;
+
+void print_word_scores() {
+	for (Word *w = words; w < letter_start[unlocked]; w++) {
+		printf("%15li %s\n", w->chance, w->word);
+	}
+}
 
 Time now_ms() {
 	struct timeval t;
@@ -80,7 +95,7 @@ void update_accuracy(char pressed, char target, Time time) {
 	int score = correct ? time : MAX_TIME;
 	global_accuracy = (correct + 15 * global_accuracy) / 16;
 	if (target >= 'a' && target <= 'z') {
-		key_accuracy[target - 'a'] = key_accuracy[target - 'a'] * 0.9 + score * 0.1;
+		key_accuracy[target - 'a'] = key_accuracy[target - 'a'] * 0.9 + score * 0.0001;
 	}
 }
 
@@ -108,7 +123,7 @@ void run_line() {
 	int keypress_count = -1;
 	memset(char_perfect, 1, sizeof(char_perfect));
 	int pos = 0;
-	char written[81];
+	char written[81] = {'\0'};
 	Time line_time = 0;
 	printf("%s\n", line);
 	key_time();
@@ -116,15 +131,28 @@ void run_line() {
 	while (!done) {
 		char c = getchar();
 		Time t = key_time();
-		printf("%c", c);
 		line_time += t;
 		keypress_count++;
-		if (c == '\n') {
+		if (c == '\n' || (!edit_enabled && keypress_count >= line_len &&
+					c == ' ')) {
 			break;
+		} else if (edit_enabled && (c == '\b' || c == 0x7f)) {
+			if (pos > 0) {
+				printf("\b \b");
+				written[--pos] = ' ';
+				char_perfect[pos] = false;
+			}
+		} else if (c == -1 || c == 4) {
+			printf("\n");
+			exit(0);
+		} else {
+			if (pos < 80) {
+				printf("%c", c);
+				update_accuracy(c, line[pos], t);
+				if (c != line[pos]) { char_perfect[pos] = false; }
+				written[pos++] = c;
+			}
 		}
-		update_accuracy(c, line[pos], t);
-		if (c != line[pos]) { char_perfect[pos] = false; }
-		written[pos++] = c;
 	}
 
 	int perfect_count = 0;
@@ -133,10 +161,12 @@ void run_line() {
 		perfect_count += char_perfect[i] && line[i] == written[i];
 		accurate_count += line[i] == written[i];
 	}
-	printf("%li raw WPM, %li adjusted WPM, %.1f%%\n",
+	printf("\n\n%3li raw WPM, %3li adj. WPM, "
+			"initial acc %5.1f%%, edited acc %5.1f%%\n\n",
 			12000 * keypress_count / line_time,
 			12000 * accurate_count / line_time,
-			100.0 * perfect_count / line_len);
+			100.0 * perfect_count / line_len,
+			100.0 * accurate_count / line_len);
 	if (perfect_count / line_len > 0.999 &&
 			12000 * accurate_count / line_time > 32) {
 		if (unlocked < 26) { unlocked++; }
@@ -150,6 +180,7 @@ void generate_line() {
 		w->chance = rate_word(w);
 		chance_sum += w->chance;
 	}
+	//print_word_scores();
 	line_len = 0;
 	line[0] = '\0';
 	while (line_len < 72) {
