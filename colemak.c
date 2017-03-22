@@ -5,7 +5,12 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <math.h>
 
+// DONE: Fix new letters appearing infrequently, this was due to weight being
+// mostly determined by word weight
+// TODO: Arithmetic average
+// TODO: Repeat the most inaccurate word several times
 // TODO: Accuracy tracking for two- and three-letter combinations
 // TODO: Accuracy tracking for whole words
 
@@ -21,7 +26,7 @@ typedef struct Word {
 } Word;
 
 static const Time MAX_TIME = 1000;
-// static const char ORDER[26] = "etaoinshrdlucmfwypvbgkqjxz";
+static const char ORDER[26] = "etaoinshrdlucmfwypvbgkqjxz";
 static const int ORDER_POS[26] = {
 	2, 19, 12, 9, 0, 14, 20, 7, 4, 23, 21, 10, 13,
 	5, 3, 17, 22, 8, 6, 1, 11, 18, 15, 24, 16, 25
@@ -92,7 +97,8 @@ void read_wordlist() {
 		*c = '\0';
 		cur_word->len = c - cur_word->word;
 		cur_word->hardest_letter = word_hardest_letter(cur_word->word);
-		cur_word->accuracy = 1.0;
+		// Start at perfect word accuracy so only hard words are learnt.
+		cur_word->accuracy = 0.2;
 		cur_word++;
 	}
 
@@ -136,21 +142,35 @@ Time key_time() {
 	return diff;
 }
 
+Word *currently_typed_word;
+float current_word_accuracy;
 void update_accuracy(char pressed, char target, Time time, Word *word) {
 	bool correct = (pressed == target);
 	int score = correct ? time : MAX_TIME;
 	if (target >= 'a' && target <= 'z') {
-		key_accuracy[target - 'a'] = key_accuracy[target - 'a'] * 0.9 + score * 0.0001;
+		key_accuracy[target - 'a'] = key_accuracy[target - 'a'] * 0.95 + score * 0.00005;
+	}
+	if (pressed >= 'a' && pressed <= 'z') {
+		key_accuracy[pressed - 'a'] = key_accuracy[pressed - 'a'] * 0.95 + score * 0.00005;
+	}
+	if (word) {
+		currently_typed_word = word;
+		current_word_accuracy += score * 0.001;
+	} else {
+		currently_typed_word->accuracy = currently_typed_word->accuracy * 0.9 +
+			(current_word_accuracy / currently_typed_word->len) * 0.1;
+		current_word_accuracy = 0.0;
+		currently_typed_word = NULL;
 	}
 }
 
 Chance rate_word(Word *w) {
-	float total = 0.0;
+	float total = 1.0;
 	for (char *c = w->word; c < w->word + w->len; c++) {
 		float tmp = key_accuracy[*c - 'a'];
-		total += tmp * tmp;
+		total *= tmp * tmp;
 	}
-	return total / (w->len + 1) * 0x10000;
+	return pow(total, 1.0 / w->len) * 0x10000;
 }
 
 Word *random_word() {
@@ -169,12 +189,19 @@ void generate_line() {
 		w->chance = rate_word(w);
 		chance_sum += w->chance;
 	}
+
+#ifdef DEBUG
+	for (Word *w = letter_start[0]; w < letter_start[unlocked]; w++) {
+		printf("%8li %s\n", w->chance, w->word);
+	}
+#endif // DEBUG
+
 	//print_word_scores();
 	line_len = 0;
 	line[0] = '\0';
 	while (line_len < 72) {
 		Word *w = random_word();
-		for (int i = line_len; i < line_len + w->len; i++) {
+		for (size_t i = line_len; i < line_len + w->len; i++) {
 			line_word[i] = w;
 		}
 		if (line_len + w->len + 1 > 80) {
@@ -191,11 +218,13 @@ void generate_line() {
 }
 
 void run_line() {
-	int pos = 0;
+	size_t pos = 0;
 	int accurate = 0;
 	Time line_time = 0;
 	printf("%s\n", line);
 	key_time();
+	currently_typed_word = NULL;
+	current_word_accuracy = 0.0;
 
 	while (true) {
 		char c = getchar();
@@ -223,6 +252,11 @@ void run_line() {
 	if (accuracy > 0.999 && wpm > 32 && unlocked < 26) {
 		unlocked++;
 	}
+#ifdef DEBUG
+	for (int i = 0; i < unlocked; i++) {
+		printf("%c %f\n", ORDER[i], key_accuracy[ORDER[i] - 'a']);
+	}
+#endif // DEBUG
 }
 
 int main() {
