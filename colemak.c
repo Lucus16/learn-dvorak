@@ -7,7 +7,6 @@
 #include <stdio.h>
 #include <math.h>
 
-// TODO: Arithmetic average
 // TODO: Repeat the most inaccurate word several times
 // TODO: Accuracy tracking for two- and three-letter combinations
 // TODO: Accuracy tracking for whole words
@@ -21,10 +20,14 @@ typedef struct Word {
 	int hardest_letter;
 	size_t len;
 	Chance chance;
+	Accuracy accuracy;
 } Word;
 
-static const Time MAX_TIME = 1000;
+#ifdef DEBUG
 static const char ORDER[26] = "etaoinshrdlucmfwypvbgkqjxz";
+#endif // DEBUG
+
+static const Time MAX_TIME = 1000;
 static const int ORDER_POS[26] = {
 	2, 19, 12, 9, 0, 14, 20, 7, 4, 23, 21, 10, 13,
 	5, 3, 17, 22, 8, 6, 1, 11, 18, 15, 24, 16, 25
@@ -95,6 +98,7 @@ void read_wordlist() {
 		*c = '\0';
 		cur_word->len = c - cur_word->word;
 		cur_word->hardest_letter = word_hardest_letter(cur_word->word);
+		cur_word->accuracy = 0.2;
 		cur_word++;
 	}
 
@@ -134,6 +138,12 @@ void update_letter_accuracy(char letter, int score) {
 	}
 }
 
+void update_word_accuracy(Word *word, int score) {
+	if (word != NULL) {
+		word->accuracy = word->accuracy * 0.5 + score * 0.0005;
+	}
+}
+
 Word *hardest_word;
 Accuracy hardest_word_accuracy;
 void update_accuracy(char pressed, char target, Time time, Word *word) {
@@ -152,6 +162,7 @@ void update_accuracy(char pressed, char target, Time time, Word *word) {
 		last_word_accuracy = score;
 	} else if (word == NULL) {
 		last_word_accuracy /= last_word_len;
+		update_word_accuracy(last_word, last_word_accuracy);
 		if (hardest_word_accuracy < last_word_accuracy) {
 			hardest_word_accuracy = last_word_accuracy;
 			hardest_word = last_word;
@@ -169,7 +180,7 @@ Chance rate_word(Word *w) {
 		Accuracy tmp = key_accuracy[*c - 'a'];
 		total *= tmp * tmp;
 	}
-	return pow(total, 1.0 / w->len) * 0x10000;
+	return pow(total, 1.0 / w->len) * 0x1000000 * w->accuracy * w->accuracy;
 }
 
 Word *random_word() {
@@ -221,8 +232,6 @@ void run_line() {
 	Time line_time = 0;
 	printf("%s\n", line);
 	key_time();
-	currently_typed_word = NULL;
-	current_word_accuracy = 0.0;
 	hardest_word = NULL;
 	hardest_word_accuracy = 0.0;
 
@@ -250,7 +259,7 @@ void run_line() {
 	int wpm = 12000 * pos / line_time;
 	Accuracy accuracy = 1.0 * accurate / line_len;
 	printf("\n\n%3i WPM, %5.1f%% accuracy\n\n", wpm, 100.0 * accuracy);
-	if (accuracy > 0.999 && wpm > 32 && unlocked < 26) {
+	if (accuracy > 0.999 && wpm >= 32 && unlocked < 26) {
 		unlocked++;
 	}
 #ifdef DEBUG
@@ -268,5 +277,4 @@ int main() {
 		generate_line();
 		run_line();
 	}
-	finish();
 }
