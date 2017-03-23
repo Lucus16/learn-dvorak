@@ -117,8 +117,8 @@ Time now_ms() {
 	return ms;
 }
 
-Time prev_time;
 Time key_time() {
+	static Time prev_time;
 	Time now = now_ms();
 	Time diff = now - prev_time;
 	prev_time = now;
@@ -128,26 +128,39 @@ Time key_time() {
 	return diff;
 }
 
-Word *currently_typed_word;
-float current_word_accuracy;
+void update_letter_accuracy(char letter, int score) {
+	if (letter >= 'a' && letter <= 'z') {
+		key_accuracy[letter - 'a'] = key_accuracy[letter - 'a'] * 0.95 + score * 0.00005;
+	}
+}
+
+Word *hardest_word;
+Accuracy hardest_word_accuracy;
 void update_accuracy(char pressed, char target, Time time, Word *word) {
+	static Word *last_word = NULL;
+	static size_t last_word_len;
+	static Accuracy last_word_accuracy;
 	bool correct = (pressed == target);
 	int score = correct ? time : MAX_TIME;
-	if (target >= 'a' && target <= 'z') {
-		key_accuracy[target - 'a'] = key_accuracy[target - 'a'] * 0.95 + score * 0.00005;
-	}
-	if (pressed >= 'a' && pressed <= 'z') {
-		key_accuracy[pressed - 'a'] = key_accuracy[pressed - 'a'] * 0.95 + score * 0.00005;
-	}
-	if (word) {
-		currently_typed_word = word;
-		current_word_accuracy += score * 0.001;
+
+	update_letter_accuracy(pressed, score);
+	update_letter_accuracy(target, score);
+
+	if (last_word == NULL) {
+		last_word = word;
+		last_word_len = 1;
+		last_word_accuracy = score;
+	} else if (word == NULL) {
+		last_word_accuracy /= last_word_len;
+		if (hardest_word_accuracy < last_word_accuracy) {
+			hardest_word_accuracy = last_word_accuracy;
+			hardest_word = last_word;
+		}
 	} else {
-		currently_typed_word->accuracy = currently_typed_word->accuracy * 0.9 +
-			(current_word_accuracy / currently_typed_word->len) * 0.1;
-		current_word_accuracy = 0.0;
-		currently_typed_word = NULL;
+		last_word_len++;
+		last_word_accuracy += score;
 	}
+	last_word = word;
 }
 
 Chance rate_word(Word *w) {
@@ -182,7 +195,6 @@ void generate_line() {
 	}
 #endif // DEBUG
 
-	//print_word_scores();
 	line_len = 0;
 	line[0] = '\0';
 	while (line_len < 72) {
@@ -211,6 +223,8 @@ void run_line() {
 	key_time();
 	currently_typed_word = NULL;
 	current_word_accuracy = 0.0;
+	hardest_word = NULL;
+	hardest_word_accuracy = 0.0;
 
 	while (true) {
 		char c = getchar();
@@ -231,6 +245,7 @@ void run_line() {
 		}
 		pos++;
 	}
+	update_accuracy(' ', ' ', 1.0, NULL);
 
 	int wpm = 12000 * pos / line_time;
 	Accuracy accuracy = 1.0 * accurate / line_len;
