@@ -7,8 +7,6 @@
 #include <stdio.h>
 #include <math.h>
 
-// DONE: Fix new letters appearing infrequently, this was due to weight being
-// mostly determined by word weight
 // TODO: Arithmetic average
 // TODO: Repeat the most inaccurate word several times
 // TODO: Accuracy tracking for two- and three-letter combinations
@@ -16,13 +14,13 @@
 
 typedef uint64_t Time;
 typedef uint64_t Chance;
+typedef float Accuracy;
 
 typedef struct Word {
 	char *word;
 	int hardest_letter;
 	size_t len;
 	Chance chance;
-	float accuracy;
 } Word;
 
 static const Time MAX_TIME = 1000;
@@ -32,7 +30,7 @@ static const int ORDER_POS[26] = {
 	5, 3, 17, 22, 8, 6, 1, 11, 18, 15, 24, 16, 25
 };
 
-float key_accuracy[26] = {
+Accuracy key_accuracy[26] = {
 	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 };
@@ -97,8 +95,6 @@ void read_wordlist() {
 		*c = '\0';
 		cur_word->len = c - cur_word->word;
 		cur_word->hardest_letter = word_hardest_letter(cur_word->word);
-		// Start at perfect word accuracy so only hard words are learnt.
-		cur_word->accuracy = 0.2;
 		cur_word++;
 	}
 
@@ -114,12 +110,6 @@ void read_wordlist() {
 	letter_start[26] = words + word_count;
 }
 
-void print_word_scores() {
-	for (Word *w = words; w < letter_start[unlocked]; w++) {
-		printf("%15li %s\n", w->chance, w->word);
-	}
-}
-
 Time now_ms() {
 	struct timeval t;
 	gettimeofday(&t, NULL);
@@ -128,16 +118,12 @@ Time now_ms() {
 }
 
 Time prev_time;
-Time avg_time;
 Time key_time() {
 	Time now = now_ms();
 	Time diff = now - prev_time;
 	prev_time = now;
 	if (diff > MAX_TIME) {
 		diff = MAX_TIME;
-	}
-	if (diff > 0) {
-		avg_time = (diff + 15 * avg_time) / 16;
 	}
 	return diff;
 }
@@ -167,7 +153,7 @@ void update_accuracy(char pressed, char target, Time time, Word *word) {
 Chance rate_word(Word *w) {
 	float total = 1.0;
 	for (char *c = w->word; c < w->word + w->len; c++) {
-		float tmp = key_accuracy[*c - 'a'];
+		Accuracy tmp = key_accuracy[*c - 'a'];
 		total *= tmp * tmp;
 	}
 	return pow(total, 1.0 / w->len) * 0x10000;
@@ -247,7 +233,7 @@ void run_line() {
 	}
 
 	int wpm = 12000 * pos / line_time;
-	float accuracy = 1.0 * accurate / line_len;
+	Accuracy accuracy = 1.0 * accurate / line_len;
 	printf("\n\n%3i WPM, %5.1f%% accuracy\n\n", wpm, 100.0 * accuracy);
 	if (accuracy > 0.999 && wpm > 32 && unlocked < 26) {
 		unlocked++;
@@ -263,10 +249,9 @@ int main() {
 	srand(now_ms());
 	read_wordlist();
 	start();
-	avg_time = MAX_TIME;
-	key_time();
 	while (true) {
 		generate_line();
 		run_line();
 	}
+	finish();
 }
