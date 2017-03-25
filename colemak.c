@@ -7,9 +7,8 @@
 #include <stdio.h>
 #include <math.h>
 
-// TODO: Repeat the most inaccurate word several times
 // TODO: Accuracy tracking for two- and three-letter combinations
-// TODO: Accuracy tracking for whole words
+// TODO: Increase wrong word repition in later stages.
 
 typedef uint64_t Time;
 typedef uint64_t Chance;
@@ -144,11 +143,10 @@ void update_word_accuracy(Word *word, int score) {
 	}
 }
 
-Word *hardest_word;
-Accuracy hardest_word_accuracy;
 void update_accuracy(char pressed, char target, Time time, Word *word) {
 	static Word *last_word = NULL;
 	static size_t last_word_len;
+	static size_t last_word_mistakes;
 	static Accuracy last_word_accuracy;
 	bool correct = (pressed == target);
 	int score = correct ? time : MAX_TIME;
@@ -159,17 +157,15 @@ void update_accuracy(char pressed, char target, Time time, Word *word) {
 	if (last_word == NULL) {
 		last_word = word;
 		last_word_len = 1;
+		last_word_mistakes = 1 - correct;
 		last_word_accuracy = score;
 	} else if (word == NULL) {
-		last_word_accuracy /= last_word_len;
-		update_word_accuracy(last_word, last_word_accuracy);
-		if (hardest_word_accuracy < last_word_accuracy) {
-			hardest_word_accuracy = last_word_accuracy;
-			hardest_word = last_word;
-		}
+		update_word_accuracy(last_word, last_word_accuracy / last_word_len +
+				last_word_mistakes * MAX_TIME);
 	} else {
 		last_word_len++;
 		last_word_accuracy += score;
+		last_word_mistakes += 1 - correct;
 	}
 	last_word = word;
 }
@@ -180,7 +176,8 @@ Chance rate_word(Word *w) {
 		Accuracy tmp = key_accuracy[*c - 'a'];
 		total *= tmp * tmp;
 	}
-	return pow(total, 1.0 / w->len) * 0x1000000 * w->accuracy * w->accuracy;
+	return pow(total, 1.0 / w->len) * 0x1000000 *
+		w->accuracy * w->accuracy * w->accuracy * w->accuracy;
 }
 
 Word *random_word() {
@@ -210,12 +207,15 @@ void generate_line() {
 	line[0] = '\0';
 	while (line_len < 72) {
 		Word *w = random_word();
-		for (size_t i = line_len; i < line_len + w->len; i++) {
-			line_word[i] = w;
-		}
 		if (line_len + w->len + 1 > 80) {
 			continue;
 		}
+		for (size_t i = line_len; i < line_len + w->len; i++) {
+			line_word[i] = w;
+		}
+		Chance half = w->chance >> 1;
+		chance_sum -= half;
+		w->chance -= half;
 		line_len += w->len + 1;
 		line_word[line_len - 1] = NULL;
 		strcat(line, w->word);
@@ -232,8 +232,6 @@ void run_line() {
 	Time line_time = 0;
 	printf("%s\n", line);
 	key_time();
-	hardest_word = NULL;
-	hardest_word_accuracy = 0.0;
 
 	while (true) {
 		char c = getchar();
@@ -251,15 +249,15 @@ void run_line() {
 			} else {
 				update_accuracy(c, ' ', t, NULL);
 			}
+			pos++;
 		}
-		pos++;
 	}
 	update_accuracy(' ', ' ', 1.0, NULL);
 
 	int wpm = 12000 * pos / line_time;
-	Accuracy accuracy = 1.0 * accurate / line_len;
-	printf("\n\n%3i WPM, %5.1f%% accuracy\n\n", wpm, 100.0 * accuracy);
-	if (accuracy > 0.999 && wpm >= 32 && unlocked < 26) {
+	int mistakes = line_len - accurate;
+	printf("\n\n%3i WPM, %2i mistakes\n\n", wpm, mistakes);
+	if (mistakes < 1 && wpm >= 32 && unlocked < 26) {
 		unlocked++;
 	}
 #ifdef DEBUG
