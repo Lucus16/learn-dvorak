@@ -7,7 +7,6 @@
 #include <stdio.h>
 #include <math.h>
 
-// TODO: Need two lines to advance a letter
 // TODO: Accuracy tracking for two- and three-letter combinations
 // TODO: Better word list and better character order
 
@@ -45,6 +44,7 @@ char line[81];
 Word *line_word[80];
 size_t line_len;
 Chance chance_sum;
+size_t line_count;
 
 struct termios initial_term_settings;
 void start() {
@@ -54,11 +54,12 @@ void start() {
 	term.c_lflag &= ~ICANON;
 	term.c_lflag &= ~ECHO;
 	tcsetattr(fileno(stdin), TCSANOW, &term);
+	line_count = 0;
 }
 
 void finish() {
 	tcsetattr(fileno(stdin), TCSANOW, &initial_term_settings);
-	printf("\nYou unlocked %i letters.\n", unlocked);
+	printf("\nYou unlocked %i letters practicing %lu lines.\n", unlocked, line_count);
 	exit(0);
 }
 
@@ -233,6 +234,7 @@ void generate_line() {
 }
 
 void run_line() {
+	static int correct_run = 0;
 	size_t pos = 0;
 	int accurate = 0;
 	Time line_time = 0;
@@ -263,9 +265,16 @@ void run_line() {
 	int wpm = 12000 * pos / line_time;
 	int mistakes = line_len - accurate;
 	printf("\n\n%3i WPM, %2i mistakes\n\n", wpm, mistakes);
-	if (mistakes < 1 && wpm >= 32 && unlocked < 26) {
+	if (mistakes < 1 && wpm >= 32) {
+		correct_run++;
+	} else {
+		correct_run = 0;
+	}
+	if (correct_run > 1 && unlocked < 26) {
+		correct_run = 0;
 		unlocked++;
 	}
+	line_count++;
 #ifdef DEBUG
 	for (int i = 0; i < unlocked; i++) {
 		printf("%c %f\n", ORDER[i], key_accuracy[ORDER[i] - 'a']);
