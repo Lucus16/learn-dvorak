@@ -7,8 +7,9 @@
 #include <stdio.h>
 #include <math.h>
 
+// TODO: Need two lines to advance a letter
 // TODO: Accuracy tracking for two- and three-letter combinations
-// TODO: Increase wrong word repition in later stages.
+// TODO: Better word list and better character order
 
 typedef uint64_t Time;
 typedef uint64_t Chance;
@@ -131,6 +132,8 @@ Time key_time() {
 	return diff;
 }
 
+//////////////// RATING ////////////////
+
 void update_letter_accuracy(char letter, int score) {
 	if (letter >= 'a' && letter <= 'z') {
 		key_accuracy[letter - 'a'] = key_accuracy[letter - 'a'] * 0.95 + score * 0.00005;
@@ -157,15 +160,16 @@ void update_accuracy(char pressed, char target, Time time, Word *word) {
 	if (last_word == NULL) {
 		last_word = word;
 		last_word_len = 1;
-		last_word_mistakes = 1 - correct;
+		last_word_mistakes = correct ? 0 : 1;
 		last_word_accuracy = score;
 	} else if (word == NULL) {
-		update_word_accuracy(last_word, last_word_accuracy / last_word_len +
-				last_word_mistakes * MAX_TIME);
+		last_word_mistakes += correct ? 0 : 1;
+		update_word_accuracy(last_word, last_word_mistakes > 0 ? MAX_TIME :
+				last_word_accuracy / last_word_len);
 	} else {
-		last_word_len++;
+		last_word_len += 1;
+		last_word_mistakes += correct ? 0 : 1;
 		last_word_accuracy += score;
-		last_word_mistakes += 1 - correct;
 	}
 	last_word = word;
 }
@@ -174,11 +178,13 @@ Chance rate_word(Word *w) {
 	float total = 1.0;
 	for (char *c = w->word; c < w->word + w->len; c++) {
 		Accuracy tmp = key_accuracy[*c - 'a'];
-		total *= tmp * tmp;
+		total += pow(26 * 26, tmp);
 	}
-	return pow(total, 1.0 / w->len) * 0x1000000 *
-		w->accuracy * w->accuracy * w->accuracy * w->accuracy;
+	return 0x100 * (total / (w->len + 1)) *
+		pow((letter_start[unlocked] - letter_start[0]), 2 * w->accuracy);
 }
+
+//////////////// RATING ////////////////
 
 Word *random_word() {
 	Chance r = (((Chance)rand() << 32) | (Chance)rand()) % chance_sum;
@@ -213,9 +219,9 @@ void generate_line() {
 		for (size_t i = line_len; i < line_len + w->len; i++) {
 			line_word[i] = w;
 		}
-		Chance half = w->chance >> 1;
-		chance_sum -= half;
-		w->chance -= half;
+		//Chance half = w->chance >> 1;
+		//chance_sum -= half;
+		//w->chance -= half;
 		line_len += w->len + 1;
 		line_word[line_len - 1] = NULL;
 		strcat(line, w->word);
